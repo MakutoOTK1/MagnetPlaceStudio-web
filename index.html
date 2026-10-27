@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MagnetPlace Studio</title>
+<meta name="description" content="Inserta imanes en las pausas de impresión de tus archivos Bambu .gcode.3mf, directamente en el navegador.">
+<link rel="icon" href="assets/icon.ico">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Barra de herramientas -->
+  <header id="toolbar">
+    <div class="brand"><img src="assets/logo.png" alt=""><span>MagnetPlace Studio</span></div>
+    <div class="tb-group">
+      <button data-i18n="menu.open_file" id="btnOpen"></button>
+      <span class="sep"></span>
+      <button data-i18n="menu.open_project" id="btnOpenProject"></button>
+      <button data-i18n="menu.save_project" id="btnSaveProject"></button>
+      <span class="sep"></span>
+      <button data-i18n="tb.preview" id="btnPreview" disabled></button>
+      <button data-i18n="menu.export" id="btnExport" class="accent" disabled></button>
+    </div>
+    <div class="tb-group tb-right">
+      <button id="btnCalib" data-i18n="menu.calibration"></button>
+      <button id="btnPrefs" data-i18n="menu.preferences"></button>
+      <button id="btnAbout" title="About">?</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Izquierda: visor -->
+    <section id="left">
+      <div id="infoLabel" class="info"></div>
+      <div class="row color-bar">
+        <span data-i18n="left.magnet_to_place"></span>
+        <label class="radio"><input type="radio" name="mcolor" value="red" checked><span class="dot red"></span><span data-i18n="left.red"></span></label>
+        <label class="radio"><input type="radio" name="mcolor" value="blue"><span class="dot blue"></span><span data-i18n="left.blue"></span></label>
+      </div>
+      <div class="row mode-bar">
+        <div class="seg">
+          <button id="btn2d" class="on" data-i18n="viewer.mode_2d" data-i18n-title="viewer.mode_2d_tip"></button>
+          <button id="btn3d" data-i18n="viewer.mode_3d" data-i18n-title="viewer.mode_3d_tip"></button>
+        </div>
+        <button id="btnRefresh3d" data-i18n="viewer.refresh" data-i18n-title="viewer.refresh_tip" hidden></button>
+        <label class="chk" id="lblInfill"><input type="checkbox" id="chkInfill" checked><span data-i18n="menu.hide_infill"></span></label>
+        <span id="viewerStatus" class="muted grow"></span>
+        <span id="colorByWrap" hidden><span data-i18n="v3d.color_by"></span>
+          <select id="selColorBy">
+            <option value="feature" data-i18n="v3d.color_feature"></option>
+            <option value="phase" data-i18n="v3d.color_phase"></option>
+            <option value="layer" data-i18n="v3d.color_layer"></option>
+            <option value="speed" data-i18n="v3d.color_speed"></option>
+          </select>
+        </span>
+      </div>
+      <div id="viewer">
+        <canvas id="bed"></canvas>
+        <div id="zoomCtl">
+          <button id="zoomIn" title="+">+</button>
+          <button id="zoomOut" title="−">−</button>
+          <button id="zoomFit" title="⤢">⤢</button>
+        </div>
+        <iframe id="v3d" title="3D" hidden></iframe>
+        <div id="dropHint" hidden></div>
+      </div>
+      <div id="pauseBar" class="row center" hidden>
+        <button id="btnPrevPause" class="ghost" data-i18n-title="pause.prev">◀</button>
+        <span id="lblPause"></span>
+        <button id="btnNextPause" class="ghost" data-i18n-title="pause.next">▶</button>
+      </div>
+    </section>
+
+    <button id="btnCollapse" data-i18n-title="panel.toggle">▶</button>
+
+    <!-- Derecha: pestañas -->
+    <section id="right">
+      <nav class="tabs" id="tabs">
+        <button data-tab="modules" class="on" data-i18n="tab.modules"></button>
+        <button data-tab="params" data-i18n="tab.params"></button>
+        <button data-tab="sequences" data-i18n="tab.sequences"></button>
+        <button data-tab="points" data-i18n="tab.points"></button>
+        <button data-tab="preview" data-i18n="tab.preview"></button>
+      </nav>
+
+      <!-- Imanes (módulos) -->
+      <div class="tab-page on" id="tab-modules">
+        <div id="moduleCards"></div>
+        <div class="row">
+          <button id="btnAddModule" data-i18n="mod.add"></button>
+          <span class="muted" data-i18n="mod.max_hint"></span>
+        </div>
+      </div>
+
+      <!-- Parámetros -->
+      <div class="tab-page" id="tab-params">
+        <label class="chk"><input type="checkbox" id="chkAdvanced"><span data-i18n="params.advanced"></span></label>
+        <div class="form">
+          <label data-i18n="params.pause_token"></label><input type="text" data-key="pause_token">
+          <label class="adv" data-i18n="params.offset_x"></label><input class="adv" type="number" step="0.5" data-key="offset_x">
+          <label class="adv" data-i18n="params.offset_y"></label><input class="adv" type="number" step="0.5" data-key="offset_y">
+          <label class="adv" data-i18n="params.offset_z"></label><input class="adv" type="number" step="0.5" data-key="offset_z">
+          <label class="adv" data-i18n="params.safe_z"></label><input class="adv" type="number" step="0.5" min="0" data-key="safe_z_offset">
+          <label class="adv" data-i18n="params.travel_feed"></label><input class="adv" type="number" step="100" min="0" data-key="travel_feed">
+          <label class="adv" data-i18n="params.default_temp"></label><input class="adv" type="number" step="5" min="0" data-key="default_temp">
+          <label class="adv" data-i18n="params.features"></label><input class="adv" type="text" data-key="features">
+        </div>
+
+        <h3 data-i18n="params.area_header"></h3>
+        <label class="chk"><input type="checkbox" id="chkShowArea"><span data-i18n="params.show_area"></span></label>
+        <p class="muted" id="lblArea"></p>
+
+        <h3 data-i18n="params.spacing_header"></h3>
+        <label class="chk"><input type="checkbox" id="chkShowSpacing"><span data-i18n="params.show_spacing"></span></label>
+        <label class="chk adv"><input type="checkbox" id="chkAutoReorder"><span data-i18n="params.auto_reorder"></span></label>
+        <p class="muted" id="lblSpacing"></p>
+        <button id="btnSpacingInfo" data-i18n="params.spacing_info"></button>
+
+        <h3 data-i18n="params.detection_header"></h3>
+        <label class="chk"><input type="checkbox" data-key="hole_detection_enabled"><span data-i18n="params.detection_enable"></span></label>
+        <label class="chk"><input type="checkbox" data-key="hole_match_modules" class="det"><span data-i18n="params.match_modules"></span></label>
+        <div class="form">
+          <label data-i18n="params.diam_tol"></label><input type="number" step="0.1" min="0" data-key="hole_diameter_tol" class="det">
+        </div>
+        <p class="muted" id="lblMatch"></p>
+        <div class="form">
+          <label data-i18n="params.r_min"></label><input type="number" step="0.5" min="0" data-key="hole_r_min" class="det rad">
+          <label data-i18n="params.r_max"></label><input type="number" step="0.5" min="0" data-key="hole_r_max" class="det rad">
+          <label class="adv" data-i18n="params.circularity"></label><input class="adv det" type="number" step="0.01" min="0" max="1" data-key="hole_circularity">
+          <label class="adv" data-i18n="params.cluster"></label><input class="adv det" type="number" step="0.5" min="0" data-key="hole_cluster_dist">
+          <label class="adv" data-i18n="params.min_arc"></label><input class="adv det" type="number" step="5" min="0" max="360" data-key="hole_min_arc">
+        </div>
+
+        <h3 data-i18n="params.fit_header"></h3>
+        <div class="form">
+          <label class="adv" data-i18n="params.fit_very_tight"></label><input class="adv" type="number" step="0.01" min="0" data-key="fit_very_tight">
+          <label class="adv" data-i18n="params.fit_high"></label><input class="adv" type="number" step="0.5" min="0" data-key="fit_high_gap">
+        </div>
+        <p class="muted" id="lblFit"></p>
+        <p class="muted small adv" data-i18n-html="params.fit_hint"></p>
+
+        <div class="row">
+          <button id="btnRerun" class="accent det" data-i18n="params.rerun"></button>
+          <button id="btnResetParams" data-i18n="params.reset"></button>
+        </div>
+        <p class="muted" data-i18n-html="params.hint"></p>
+      </div>
+
+      <!-- Secuencias -->
+      <div class="tab-page" id="tab-sequences">
+        <p class="muted" data-i18n="seq.info"></p>
+        <nav class="tabs sub" id="seqTabs">
+          <button data-seq="seq_red" class="on" data-i18n="seq.red"></button>
+          <button data-seq="seq_blue" data-i18n="seq.blue"></button>
+          <button data-seq="seq_start" data-i18n="seq.start"></button>
+          <button data-seq="seq_end" data-i18n="seq.end"></button>
+          <button data-seq="seq_final" data-i18n="seq.final"></button>
+        </nav>
+        <textarea id="seqEditor" class="mono" spellcheck="false" wrap="off"></textarea>
+        <p class="muted" data-i18n="seq.export_test_hint"></p>
+        <div class="col">
+          <div><button id="btnExportTest" class="accent" data-i18n="seq.export_test"></button></div>
+          <div><button id="btnResetSeq" data-i18n="seq.reset"></button></div>
+        </div>
+      </div>
+
+      <!-- Puntos -->
+      <div class="tab-page" id="tab-points">
+        <p data-i18n="points.placed"></p>
+        <select id="pointsList" class="mono" size="12"></select>
+        <div class="col">
+          <div><button id="btnDelPoint" data-i18n="points.delete_selected"></button></div>
+          <div><button id="btnClearPoints" data-i18n="points.delete_all"></button></div>
+        </div>
+      </div>
+
+      <!-- Vista previa -->
+      <div class="tab-page" id="tab-preview">
+        <div class="col">
+          <div><button id="btnGenPreview" data-i18n="preview.generate"></button></div>
+          <div><button id="btnGoto" data-i18n="preview.goto"></button></div>
+        </div>
+        <p class="muted" id="lblPreview"></p>
+        <textarea id="previewText" class="mono" readonly spellcheck="false" wrap="off"></textarea>
+      </div>
+    </section>
+  </main>
+
+  <footer id="statusBar"><span id="status"></span><span id="version" class="muted"></span></footer>
+</div>
+
+<!-- Pantalla de carga mientras arranca Python en el navegador -->
+<div id="boot">
+  <div class="boot-card">
+    <img src="assets/logo.png" alt="">
+    <h1>MagnetPlace Studio</h1>
+    <div class="spinner"></div>
+    <p id="bootMsg">Cargando…</p>
+  </div>
+</div>
+
+<!-- Velo de trabajo (análisis, exportación) -->
+<div id="busy" hidden><div class="spinner"></div><p id="busyMsg"></p></div>
+
+<!-- Diálogos -->
+<div id="modalRoot"></div>
+
+<input type="file" id="fileInput" accept=".3mf,.gcode" hidden>
+<input type="file" id="projectInput" accept=".mip,application/json" hidden>
+<input type="file" id="templateInput" accept=".3mf" hidden>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

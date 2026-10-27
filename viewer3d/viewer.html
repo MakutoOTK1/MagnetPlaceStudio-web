@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MagnetPlace Studio — Visor 3D</title>
+<style>
+  :root {
+    --bg: #181b26;
+    --panel: rgba(37, 42, 58, 0.92);
+    --border: #363c52;
+    --text: #e6e9f2;
+    --muted: #9aa2b8;
+    --accent: #3b82f6;
+    --phase0: #6f7ea0;
+    --phase1: #f0a726;
+    --phase2: #35c07a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg);
+               font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); }
+  #canvas-container { position: absolute; inset: 0; }
+  canvas { display: block; }
+
+  #hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          font-size: 14px; color: var(--muted); pointer-events: none; text-align: center; padding: 24px; }
+  #hint.hidden { display: none; }
+
+  /* --- barra inferior: transporte y árbol de tiempo --- */
+  /* Sin `backdrop-filter`: el desenfoque obliga a Chromium a releer el búfer
+     del canvas WebGL en cada fotograma y eso provoca parpadeos sobre una
+     escena que se está animando. El panel va opaco. */
+  #transport { position: absolute; left: 12px; right: 12px; bottom: 12px;
+               background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+               padding: 9px 12px 11px; }
+  .row { display: flex; align-items: center; gap: 9px; }
+  .row + .row { margin-top: 8px; }
+
+  button { background: #2b3145; color: var(--text); border: 1px solid var(--border);
+           border-radius: 7px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+           white-space: nowrap; }
+  button:hover:not(:disabled) { background: #363d55; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.on { border-color: var(--accent); background: #2f4470; }
+  button.ph0.on { border-color: var(--phase0); background: #38405c; }
+  button.ph1.on { border-color: var(--phase1); background: #5a4318; }
+  button.ph2.on { border-color: var(--phase2); background: #1d5039; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px;
+            vertical-align: middle; }
+
+  /* El árbol de tiempo: una barra con las tres fases proporcionales. */
+  #timeline { position: relative; flex: 1; height: 22px; }
+  #phases { position: absolute; inset: 0; display: flex; border-radius: 5px; overflow: hidden;
+            border: 1px solid var(--border); pointer-events: none; }
+  #phases div { height: 100%; opacity: 0.42; }
+  #phases .p0 { background: var(--phase0); }
+  #phases .p1 { background: var(--phase1); }
+  #phases .p2 { background: var(--phase2); }
+  #progress { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+              -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+  #progress::-webkit-slider-runnable-track { height: 22px; background: transparent; }
+  #progress::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+              width: 4px; height: 22px; border-radius: 2px; background: var(--text);
+              box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+
+  .mono { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .mono b { color: var(--text); font-weight: 600; }
+  label.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+              color: var(--muted); cursor: pointer; white-space: nowrap; }
+  label.chk input { accent-color: var(--accent); }
+  select, input[type=range].plain { background: #2b3145; color: var(--text);
+              border: 1px solid var(--border); border-radius: 7px; font-size: 12px; padding: 4px 6px; }
+  input[type=range].plain { padding: 0; accent-color: var(--accent); width: 108px; }
+
+  #right { position: absolute; top: 12px; right: 12px; width: 190px;
+           background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+           padding: 10px 12px; font-size: 12px; }
+  #right .grp + .grp { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border); }
+  #right .ttl { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+  /* Botón de plegar: dentro del panel arriba a la derecha; al plegarse pasa a
+     ser lo único que queda y el panel se encoge a su tamaño. */
+  #btnPanel { position: absolute; top: 5px; right: 5px; padding: 0 7px; line-height: 20px;
+              font-size: 13px; border-radius: 6px; }
+  #rightBody { padding-top: 15px; }
+  #right.collapsed { width: auto; padding: 5px; }
+  #right.collapsed #rightBody { display: none; }
+  #right.collapsed #btnPanel { position: static; display: block; }
+  #legend { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11px; color: var(--muted); }
+  #legend span { white-space: nowrap; }
+
+  /* Esquina superior izquierda: coordenadas de la máquina y avisos. */
+  #hud { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column;
+         align-items: flex-start; gap: 6px; pointer-events: none; }
+  #coords { background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+            padding: 6px 11px; display: flex; gap: 12px; }
+  #coords span { color: var(--muted); }
+  /* Ancho fijo por eje: si no, el número baila al cambiar de dígitos. */
+  #coords b { color: var(--text); font-weight: 600; display: inline-block;
+              min-width: 52px; text-align: right; }
+  #banner { background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+            padding: 6px 11px; font-size: 12px; color: var(--muted); }
+  #banner.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<div id="hint">…</div>
+
+<div id="hud">
+  <div id="coords" class="mono">
+    <span>X <b id="posX">—</b></span><span>Y <b id="posY">—</b></span><span>Z <b id="posZ">—</b></span>
+  </div>
+  <div id="banner" class="hidden"></div>
+</div>
+
+<!-- "Colorear por" se muestra en la barra de modo de Qt (misma fila que 2D/3D).
+     Este <select> se queda aquí, oculto, porque sigue siendo el estado que leen
+     applyColors() y buildLegend(); Qt lo sincroniza con window.mps.setColorMode. -->
+<div id="colorByState" hidden>
+  <span id="lblColorBy"></span>
+  <select id="colorMode">
+    <option value="feature">—</option>
+    <option value="phase">—</option>
+    <option value="layer">—</option>
+    <option value="speed">—</option>
+  </select>
+</div>
+
+<div id="right">
+  <button id="btnPanel">–</button>
+  <div id="rightBody">
+  <div class="grp">
+    <label class="chk"><input type="checkbox" id="chkTravel"><span id="lblTravel">Viajes</span></label><br>
+    <label class="chk"><input type="checkbox" id="chkVolume" checked><span id="lblVolume">Volumen</span></label><br>
+    <label class="chk"><input type="checkbox" id="chkModel" checked><span id="lblModel">Impresora</span></label><br>
+    <label class="chk"><input type="checkbox" id="chkFollow"><span id="lblFollow">Seguir cabezal</span></label><br>
+    <label class="chk"><input type="checkbox" id="chkStop" checked><span id="lblStop">Parar en la pausa</span></label>
+  </div>
+  <div class="grp">
+    <div class="ttl" id="lblLegend">Leyenda</div>
+    <div id="legend"></div>
+  </div>
+  </div>
+</div>
+
+<div id="transport">
+  <div class="row">
+    <button id="btnPlay">▶</button>
+    <button id="btnReset">↺</button>
+    <div id="timeline">
+      <div id="phases"><div class="p0" style="flex:1"></div><div class="p1" style="flex:0"></div><div class="p2" style="flex:0"></div></div>
+      <input type="range" id="progress" min="0" max="10000" value="0">
+    </div>
+    <span class="mono" id="clock"><b>0:00:00</b> / 0:00:00</span>
+  </div>
+  <div class="row">
+    <button class="ph0" id="btnPhase0">Antes</button>
+    <button class="ph1" id="btnPhase1">Secuencia</button>
+    <button class="ph2" id="btnPhase2">Después</button>
+    <span style="flex:1"></span>
+    <span class="mono" id="lblSpeed">Velocidad</span>
+    <input type="range" class="plain" id="speed" min="0" max="1" step="0.001" value="0.45">
+    <span class="mono" id="speedVal">×1</span>
+    <span class="mono" id="lblLayer">Capa</span>
+    <input type="range" class="plain" id="layerSlider" min="0" max="0" value="0">
+    <span class="mono" id="layerVal">0/0</span>
+  </div>
+</div>
+
+<!-- Versión web: la página va dentro de un <iframe> de index.html, que le habla
+     llamando a window.mps.*. Los activos se sirven con rutas relativas (en la
+     app de escritorio iban por el esquema mps:// de Qt). -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js",
+    "three/addons/loaders/GLTFLoader.js": "./vendor/GLTFLoader.js",
+    "three/addons/utils/BufferGeometryUtils.js": "./vendor/BufferGeometryUtils.js"
+  }
+}
+</script>
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>
